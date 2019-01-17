@@ -43,5 +43,20 @@ public static class Program {
     }
 }
 
+public static class WebDownload {
+    private static WebClient _client;
+
+    static WebDownload() {
+        _client = new WebClient();
+        _client.DownloadFileCompleted += _client_DownloadFileCompleted;
+    }
+
+    private static void _client_DownloadFileCompleted(object sender, AsyncCompletedEventArgs e) {
+        string[] uriSegments = ((Uri)((Task)e.UserState).AsyncState).Segments;
+        string filename = uriSegments[uriSegments.Length];
+    }
+
+    public static void DownloadFile(string fileAddress, string fileName) => _client.DownloadFileAsync(new Uri(fileAddress), fileName);
+}
 
 ```
