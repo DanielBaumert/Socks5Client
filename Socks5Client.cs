@@ -1,4 +1,5 @@
-public class Socks5Client {
+public class Socks5Client
+{
     private const SocksVerion VERSION = SocksVerion.Version5;
     private const ConnectionMode CONNECTION_MODE = ConnectionMode.TcpIpStream;
 
@@ -7,12 +8,15 @@ public class Socks5Client {
     public BinaryWriter StreamWriter { get; private set; }
     public BinaryReader StreamReader { get; private set; }
 
-    public static Socks5Client Connect(string socksHost, int socksPort, string entryHost, int entryPort) {
+    public static Socks5Client Connect(string socksHost, int socksPort, string entryHost, int entryPort)
+    {
 
-        using (Ping ping = new Ping()) {
+        using (Ping ping = new Ping())
+        {
             PingReply replySocks = ping.Send(socksHost);
 
-            if (replySocks.Status != IPStatus.Success) {
+            if (replySocks.Status != IPStatus.Success)
+            {
                 throw new HostUnreachableException();
             }
 
@@ -23,7 +27,8 @@ public class Socks5Client {
         }
     }
 
-    private Socks5Client(TcpClient client, IPAddress socksAddress, int socksPort, string entryHost, int entryPort) {
+    private Socks5Client(TcpClient client, IPAddress socksAddress, int socksPort, string entryHost, int entryPort)
+    {
 
         Client = client;
 
@@ -33,7 +38,31 @@ public class Socks5Client {
 
         byte[] ipBuffer = socksAddress.GetAddressBytes();
         byte[] portBuffer = BitConverter.GetBytes(socksPort);
-        byte[] entryHostBuffer = Encoding.ASCII.GetBytes(entryHost);
+        byte[] entryHostBuffer;
+        TargetAddressType addressType;
+        if (IPAddress.TryParse(entryHost, out IPAddress entryIp))
+        {
+            if (entryIp.AddressFamily == AddressFamily.InterNetwork)
+            {
+                entryHostBuffer = entryIp.GetAddressBytes();
+                addressType = TargetAddressType.IPV4;
+            }
+            else if (entryIp.AddressFamily == AddressFamily.InterNetworkV6)
+            {
+                entryHostBuffer = entryIp.GetAddressBytes();
+                addressType = TargetAddressType.IPv6;
+            }
+            else
+            {
+                throw new UnhandledAddressTypeException(entryIp.AddressFamily.ToString());
+            }
+        }
+        else
+        {
+            entryHostBuffer = Encoding.ASCII.GetBytes(entryHost);
+            addressType = TargetAddressType.Domain;
+        }
+
         //        
         //  +----+----------+----------+
         //  |VER | NMETHODS | METHODS  |
@@ -43,10 +72,10 @@ public class Socks5Client {
         //
 
         StreamWriter.Write(new[]{
-                (byte)VERSION, //Socket version [VER]
-                (byte)0x01, //supportet methods count [NMETHODS]
-                (byte)AuthenticationType.NoAuthentication //Auth. methode [METHODS]
-            });
+            (byte)VERSION, //Socket version [VER]
+            (byte)0x01, //supportet methods count [NMETHODS]
+            (byte)AuthenticationType.NoAuthentication //Auth. methode [METHODS]
+        });
 
         //                   X'00' NO AUTHENTICATION REQUIRED
         //  +----+--------+  X'01' GSSAPI
@@ -56,11 +85,12 @@ public class Socks5Client {
         //  +----+--------+  X'FF' NO ACCEPTABLE METHODS
         //
         byte[] response = {
-            StreamReader.ReadByte(), //Socket Version [VER]
-            StreamReader.ReadByte()  //seleced Auth. method [METHOD ]
-        };
+        StreamReader.ReadByte(), //Socket Version [VER]
+        StreamReader.ReadByte()  //seleced Auth. method [METHOD ]
+    };
 
-        if (response[1] == (byte)AuthenticationType.NoAcceptableMethods) {
+        if (response[1] == (byte)AuthenticationType.NoAcceptableMethods)
+        {
             Client.Close();
             throw new NotAcceptableAuthenticationTypeException();
         }
@@ -75,17 +105,29 @@ public class Socks5Client {
         // ATYP: IP V4 address: X'01', DOMAINNAME: X'03', IP V6 address: X'04'
 
         StreamWriter.Write(new[]{
-                        (byte) VERSION, // Socks version [VER]
-                        (byte) CONNECTION_MODE, // Connection mode [CMD]
-                        (byte) 0x00, // reserved [RSV] 
-                        (byte) TargetAddressType.Domain, // address type of following address
-                        (byte) entryHost.Length, // desired destination address length
-                    });
-        StreamWriter.Write(entryHostBuffer); //desired destination address
+                    (byte) VERSION, // Socks version [VER]
+                    (byte) CONNECTION_MODE, // Connection mode [CMD]
+                    (byte) 0x00, // reserved [RSV] 
+                    (byte) TargetAddressType.Domain, // address type of following address
+                       
+                });
+
+        switch (addressType)
+        {
+            case TargetAddressType.IPv6:
+            case TargetAddressType.IPV4:
+                StreamWriter.Write(entryHostBuffer);
+                break;
+            case TargetAddressType.Domain:
+                StreamWriter.Write((byte)entryHost.Length); // desired destination address length
+                StreamWriter.Write(entryHostBuffer); //desired destination address
+                break;
+        }
+
         StreamWriter.Write(new[] {
-                        (byte) (entryPort >> 8), // desired destination port in network octet order - block A
-                        (byte) (entryPort & 0xff)  // desired destination port in network octet order - block b
-                    });
+                    (byte) (entryPort >> 8), // desired destination port in network octet order - block A
+                    (byte) (entryPort & 0xff)  // desired destination port in network octet order - block b
+                });
 
         // 
         // +----+-----+-------+------+----------+----------+
@@ -95,16 +137,17 @@ public class Socks5Client {
         // +----+-----+-------+------+----------+----------+
         // 
 
-        
+
         byte version = StreamReader.ReadByte();
         byte replay = StreamReader.ReadByte();
         byte reserved = StreamReader.ReadByte();
-        byte addressType = StreamReader.ReadByte();
+        byte addressTypeResponse = StreamReader.ReadByte();
 
         byte[] bindeAddressBuffer;
         int bindPort = 0;
 
-        switch ((TargetAddressType) addressType) {
+        switch (addressType)
+        {
             case TargetAddressType.IPV4:
                 bindeAddressBuffer = StreamReader.ReadBytes(4);
                 break;
@@ -125,9 +168,10 @@ public class Socks5Client {
 
         bindPort = StreamReader.ReadByte() << 8 | (StreamReader.ReadByte());
 
-        if ((SocksError) replay != SocksError.RequestGranted) {
+        if ((SocksError)replay != SocksError.RequestGranted)
+        {
             Client.Close();
-                throw new SocksConnectionException($"{replay}");
+            throw new SocksConnectionException($"{replay}-v.{version}-port:{bindPort}");
         }
     }
 }
